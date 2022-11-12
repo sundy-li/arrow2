@@ -163,8 +163,21 @@ pub fn array_to_pages(
                     )
                 })
             }
-            _ => array_to_page(array, type_, nested, options, encoding)
-                .map(|page| DynIter::new(std::iter::once(Ok(page)))),
+            _ => {
+                const PAGE_ROW_COUNT: usize = 8192;
+                if array.len() <= PAGE_ROW_COUNT {
+                    array_to_page(array, type_, nested, options, encoding).map(|page| DynIter::new(std::iter::once(Ok(page))))
+                } else {
+                    let first = array.slice(0, PAGE_ROW_COUNT);
+                    let other = array.slice(PAGE_ROW_COUNT,  array.len() - PAGE_ROW_COUNT);
+                    
+                    Ok(DynIter::new(
+                        array_to_pages(first.as_ref(), type_.clone(), nested, options, encoding)?
+                            .chain(array_to_pages(other.as_ref(), type_, nested, options, encoding)?),
+                    ))
+                }
+               
+            }
         }
     }
 }
