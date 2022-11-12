@@ -47,7 +47,17 @@ pub(super) fn schema() -> (AvroSchema, Schema) {
                 "name": "",
                 "symbols" : ["SPADES", "HEARTS", "DIAMONDS", "CLUBS"]
             }},
-            {"name": "decimal", "type": {"type": "bytes", "logicalType": "decimal", "precision": 18, "scale": 5}}
+            {"name": "decimal", "type": {"type": "bytes", "logicalType": "decimal", "precision": 18, "scale": 5}},
+            {"name": "nullable_struct", "type": [
+                "null", {
+                    "type": "record",
+                    "name": "bla",
+                    "fields": [
+                        {"name": "e", "type": "double"}
+                    ]
+                }]
+                , "default": null
+            }
         ]
     }
 "#;
@@ -77,6 +87,11 @@ pub(super) fn schema() -> (AvroSchema, Schema) {
             false,
         ),
         Field::new("decimal", DataType::Decimal(18, 5), false),
+        Field::new(
+            "nullable_struct",
+            DataType::Struct(vec![Field::new("e", DataType::Float64, false)]),
+            true,
+        ),
     ]);
 
     (AvroSchema::parse_str(raw_schema).unwrap(), schema)
@@ -116,6 +131,12 @@ pub(super) fn data() -> Chunk<Box<dyn Array>> {
         PrimitiveArray::<i128>::from_slice([12345678i128, -12345678i128])
             .to(DataType::Decimal(18, 5))
             .boxed(),
+        StructArray::from_data(
+            DataType::Struct(vec![Field::new("e", DataType::Float64, false)]),
+            vec![Box::new(PrimitiveArray::<f64>::from_slice([1.0, 0.0]))],
+            Some([true, false].into()),
+        )
+        .boxed(),
     ];
 
     Chunk::try_new(columns).unwrap()
@@ -157,6 +178,13 @@ pub(super) fn write_avro(codec: Codec) -> std::result::Result<Vec<u8>, avro_rs::
         "duration",
         Value::Duration(Duration::new(Months::new(1), Days::new(1), Millis::new(1))),
     );
+    record.put(
+        "nullable_struct",
+        Value::Union(Box::new(Value::Record(vec![(
+            "e".to_string(),
+            Value::Double(1.0f64),
+        )]))),
+    );
     writer.append(record)?;
 
     let mut record = Record::new(writer.schema()).unwrap();
@@ -187,8 +215,9 @@ pub(super) fn write_avro(codec: Codec) -> std::result::Result<Vec<u8>, avro_rs::
             255u8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 67, 158, 178,
         ])),
     );
+    record.put("nullable_struct", Value::Union(Box::new(Value::Null)));
     writer.append(record)?;
-    Ok(writer.into_inner().unwrap())
+    writer.into_inner()
 }
 
 pub(super) fn read_avro(
@@ -280,5 +309,78 @@ fn test_projected() -> Result<()> {
         assert_eq!(schema, expected_schema);
         assert_eq!(result, expected);
     }
+    Ok(())
+}
+
+fn schema_list() -> (AvroSchema, Schema) {
+    let raw_schema = r#"
+    {
+        "type": "record",
+        "name": "test",
+        "fields": [
+            {"name": "h", "type": {
+                "type": "array",
+                "items": {
+                    "name": "item",
+                    "type": "int"
+                }
+            }}
+        ]
+    }
+"#;
+
+    let schema = Schema::from(vec![Field::new(
+        "h",
+        DataType::List(Box::new(Field::new("item", DataType::Int32, false))),
+        false,
+    )]);
+
+    (AvroSchema::parse_str(raw_schema).unwrap(), schema)
+}
+
+pub(super) fn data_list() -> Chunk<Box<dyn Array>> {
+    let data = [Some(vec![Some(1i32), Some(2), Some(3)]), Some(vec![])];
+
+    let mut array = MutableListArray::<i32, MutablePrimitiveArray<i32>>::new_from(
+        Default::default(),
+        DataType::List(Box::new(Field::new("item", DataType::Int32, false))),
+        0,
+    );
+    array.try_extend(data).unwrap();
+
+    let columns = vec![array.into_box()];
+
+    Chunk::try_new(columns).unwrap()
+}
+
+pub(super) fn write_list(codec: Codec) -> std::result::Result<Vec<u8>, avro_rs::Error> {
+    let (avro, _) = schema_list();
+    // a writer needs a schema and something to write to
+    let mut writer = Writer::with_codec(&avro, Vec::new(), codec);
+
+    // the Record type models our Record schema
+    let mut record = Record::new(writer.schema()).unwrap();
+    record.put(
+        "h",
+        Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+    );
+    writer.append(record)?;
+
+    let mut record = Record::new(writer.schema()).unwrap();
+    record.put("h", Value::Array(vec![]));
+    writer.append(record)?;
+    Ok(writer.into_inner().unwrap())
+}
+
+#[test]
+fn test_list() -> Result<()> {
+    let avro = write_list(Codec::Null).unwrap();
+    let expected = data_list();
+    let (_, expected_schema) = schema_list();
+
+    let (result, schema) = read_avro(&avro, None)?;
+
+    assert_eq!(schema, expected_schema);
+    assert_eq!(result, expected);
     Ok(())
 }

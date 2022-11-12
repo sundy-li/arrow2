@@ -1,6 +1,6 @@
 use crate::{
     bitmap::{
-        utils::{zip_validity, ZipValidity},
+        utils::{BitmapIter, ZipValidity},
         Bitmap,
     },
     buffer::Buffer,
@@ -8,6 +8,8 @@ use crate::{
     error::Error,
     trusted_len::TrustedLen,
 };
+
+use either::Either;
 
 use super::{
     specification::{try_check_offsets, try_check_offsets_bounds},
@@ -19,6 +21,8 @@ pub(super) mod fmt;
 mod iterator;
 pub use iterator::*;
 mod from;
+mod mutable_values;
+pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
 
@@ -110,12 +114,12 @@ impl<O: Offset> BinaryArray<O> {
     /// Creates a new [`BinaryArray`] from a slice of optional `&[u8]`.
     // Note: this can't be `impl From` because Rust does not allow double `AsRef` on it.
     pub fn from<T: AsRef<[u8]>, P: AsRef<[Option<T>]>>(slice: P) -> Self {
-        Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
+        MutableBinaryArray::<O>::from(slice).into()
     }
 
     /// Returns an iterator of `Option<&[u8]>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>> {
-        zip_validity(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
+    pub fn iter(&self) -> ZipValidity<&[u8], BinaryValueIter<O>, BitmapIter> {
+        ZipValidity::new(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
@@ -199,7 +203,8 @@ impl<O: Offset> BinaryArray<O> {
         let validity = self
             .validity
             .clone()
-            .map(|x| x.slice_unchecked(offset, length));
+            .map(|bitmap| bitmap.slice_unchecked(offset, length))
+            .and_then(|bitmap| (bitmap.unset_bits() > 0).then(|| bitmap));
         let offsets = self.offsets.clone().slice_unchecked(offset, length + 1);
         Self {
             data_type: self.data_type.clone(),
@@ -236,6 +241,88 @@ impl<O: Offset> BinaryArray<O> {
             panic!("validity must be equal to the array's length")
         }
         self.validity = validity;
+    }
+
+    /// Try to convert this `BinaryArray` to a `MutableBinaryArray`
+    pub fn into_mut(mut self) -> Either<Self, MutableBinaryArray<O>> {
+        use Either::*;
+        if let Some(bitmap) = self.validity {
+            match bitmap.into_mut() {
+                // Safety: invariants are preserved
+                Left(bitmap) => Left(unsafe {
+                    BinaryArray::new_unchecked(
+                        self.data_type,
+                        self.offsets,
+                        self.values,
+                        Some(bitmap),
+                    )
+                }),
+                Right(mutable_bitmap) => match (
+                    self.values.get_mut().map(std::mem::take),
+                    self.offsets.get_mut().map(std::mem::take),
+                ) {
+                    (None, None) => {
+                        // Safety: invariants are preserved
+                        Left(unsafe {
+                            BinaryArray::new_unchecked(
+                                self.data_type,
+                                self.offsets,
+                                self.values,
+                                Some(mutable_bitmap.into()),
+                            )
+                        })
+                    }
+                    (None, Some(offsets)) => {
+                        // Safety: invariants are preserved
+                        Left(unsafe {
+                            BinaryArray::new_unchecked(
+                                self.data_type,
+                                offsets.into(),
+                                self.values,
+                                Some(mutable_bitmap.into()),
+                            )
+                        })
+                    }
+                    (Some(mutable_values), None) => {
+                        // Safety: invariants are preserved
+                        Left(unsafe {
+                            BinaryArray::new_unchecked(
+                                self.data_type,
+                                self.offsets,
+                                mutable_values.into(),
+                                Some(mutable_bitmap.into()),
+                            )
+                        })
+                    }
+                    (Some(values), Some(offsets)) => Right(unsafe {
+                        MutableBinaryArray::from_data(
+                            self.data_type,
+                            offsets,
+                            values,
+                            Some(mutable_bitmap),
+                        )
+                    }),
+                },
+            }
+        } else {
+            match (
+                self.values.get_mut().map(std::mem::take),
+                self.offsets.get_mut().map(std::mem::take),
+            ) {
+                (None, None) => Left(unsafe {
+                    BinaryArray::new_unchecked(self.data_type, self.offsets, self.values, None)
+                }),
+                (None, Some(offsets)) => Left(unsafe {
+                    BinaryArray::new_unchecked(self.data_type, offsets.into(), self.values, None)
+                }),
+                (Some(values), None) => Left(unsafe {
+                    BinaryArray::new_unchecked(self.data_type, self.offsets, values.into(), None)
+                }),
+                (Some(values), Some(offsets)) => Right(unsafe {
+                    MutableBinaryArray::from_data(self.data_type, offsets, values, None)
+                }),
+            }
+        }
     }
 
     /// Creates an empty [`BinaryArray`], i.e. whose `.len` is zero.

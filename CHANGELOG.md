@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.14.2](https://github.com/jorgecarleitao/arrow2/tree/v0.14.2) (2022-10-05)
+
+[Full Changelog](https://github.com/jorgecarleitao/arrow2/compare/v0.14.1...v0.14.2)
+
+**New features:**
+
+- Added MutableUtf8ValuesArray [\#1260](https://github.com/jorgecarleitao/arrow2/pull/1260) ([jorgecarleitao](https://github.com/jorgecarleitao))
+
+**Fixed bugs:**
+
+- Unnecessary println in library code [\#1263](https://github.com/jorgecarleitao/arrow2/issues/1263)
+
+**Testing updates:**
+
+- Added test for `MutableUtf8Array::as_box` [\#1266](https://github.com/jorgecarleitao/arrow2/pull/1266) ([jorgecarleitao](https://github.com/jorgecarleitao))
+
+## [v0.14.1](https://github.com/jorgecarleitao/arrow2/tree/v0.14.1) (2022-09-27)
+
+[Full Changelog](https://github.com/jorgecarleitao/arrow2/compare/v0.14.0...v0.14.1)
+
+**Fixed bugs:**
+
+- Potentially unneeded call in Parquet repetition-level encoding [\#1254](https://github.com/jorgecarleitao/arrow2/issues/1254)
+- Potential bug in reading lists from avro? [\#1252](https://github.com/jorgecarleitao/arrow2/issues/1252)
+- Removed un-used code [\#1258](https://github.com/jorgecarleitao/arrow2/pull/1258) ([jorgecarleitao](https://github.com/jorgecarleitao))
+- Fixed error reading unbounded Avro list [\#1253](https://github.com/jorgecarleitao/arrow2/pull/1253) ([jorgecarleitao](https://github.com/jorgecarleitao))
+- Add missing call to `try_push_valid` for nested avro deserialization [\#1248](https://github.com/jorgecarleitao/arrow2/pull/1248) ([shaeqahmed](https://github.com/shaeqahmed))
+
+**Enhancements:**
+
+- Bump json\_deserializer version to 0.4.1 [\#1261](https://github.com/jorgecarleitao/arrow2/pull/1261) ([cjermain](https://github.com/cjermain))
+- Fixed clippy for 1.60 [\#1259](https://github.com/jorgecarleitao/arrow2/pull/1259) ([jorgecarleitao](https://github.com/jorgecarleitao))
+- Added `BinaryArray::into_mut` and double-ended support for its iterator [\#1255](https://github.com/jorgecarleitao/arrow2/pull/1255) ([ozgrakkurt](https://github.com/ozgrakkurt))
+
+**Testing updates:**
+
+- Improved test for nullable struct read from Avro [\#1250](https://github.com/jorgecarleitao/arrow2/pull/1250) ([jorgecarleitao](https://github.com/jorgecarleitao))
+
 ## [v0.14.0](https://github.com/jorgecarleitao/arrow2/tree/v0.14.0) (2022-09-12)
 
 [Full Changelog](https://github.com/jorgecarleitao/arrow2/compare/v0.13.0...v0.14.0)

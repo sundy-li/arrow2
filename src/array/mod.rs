@@ -17,6 +17,7 @@
 //! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor slicable, but
 //! can be operated in-place.
 use std::any::Any;
+use std::sync::Arc;
 
 use crate::error::Result;
 use crate::{
@@ -113,6 +114,15 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 
 dyn_clone::clone_trait_object!(Array);
 
+/// A trait describing an array with a backing store that can be preallocated to
+/// a given size.
+pub(crate) trait Container {
+    /// Create this array with a given capacity.
+    fn with_capacity(capacity: usize) -> Self
+    where
+        Self: Sized;
+}
+
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 /// Mutable arrays cannot be cloned but can be mutated in place,
 /// thereby making them useful to perform numeric operations without allocations.
@@ -168,6 +178,49 @@ pub trait MutableArray: std::fmt::Debug + Send + Sync {
 
     /// Shrink the array to fit its length.
     fn shrink_to_fit(&mut self);
+}
+
+impl MutableArray for Box<dyn MutableArray> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+
+    fn validity(&self) -> Option<&MutableBitmap> {
+        self.as_ref().validity()
+    }
+
+    fn as_box(&mut self) -> Box<dyn Array> {
+        self.as_mut().as_box()
+    }
+
+    fn as_arc(&mut self) -> Arc<dyn Array> {
+        self.as_mut().as_arc()
+    }
+
+    fn data_type(&self) -> &DataType {
+        self.as_ref().data_type()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self.as_ref().as_any()
+    }
+
+    fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
+        self.as_mut().as_mut_any()
+    }
+
+    #[inline]
+    fn push_null(&mut self) {
+        self.as_mut().push_null()
+    }
+
+    fn shrink_to_fit(&mut self) {
+        self.as_mut().shrink_to_fit();
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        self.as_mut().reserve(additional);
+    }
 }
 
 macro_rules! general_dyn {
@@ -377,13 +430,17 @@ mod equal;
 mod ffi;
 mod fmt;
 pub mod growable;
+mod iterator;
 pub mod ord;
+
+pub(crate) use iterator::ArrayAccessor;
+pub use iterator::ArrayValuesIter;
 
 pub use equal::equal;
 pub use fmt::{get_display, get_value_display};
 
 pub use crate::types::Offset;
-pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray};
+pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
@@ -394,7 +451,7 @@ pub use null::NullArray;
 pub use primitive::*;
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
-pub use utf8::{MutableUtf8Array, Utf8Array, Utf8ValuesIter};
+pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 
 pub(crate) use self::ffi::offset_buffers_children_dictionary;
 pub(crate) use self::ffi::FromFfi;
@@ -413,11 +470,11 @@ pub trait TryPush<A> {
     fn try_push(&mut self, item: A) -> Result<()>;
 }
 
-/// Trait that list arrays implement for the purposes of DRY.
-pub trait IterableListArray: Array {
-    /// # Safety
-    /// The caller must ensure that `i < self.len()`
-    unsafe fn value_unchecked(&self, i: usize) -> Box<dyn Array>;
+/// A trait describing the ability of a struct to extend from a reference of itself.
+/// Specialization of [`TryExtend`].
+pub trait TryExtendFromSelf {
+    /// Tries to extend itself with elements from `other`, failing only on overflow.
+    fn try_extend_from_self(&mut self, other: &Self) -> Result<()>;
 }
 
 /// Trait that [`BinaryArray`] and [`Utf8Array`] implement for the purposes of DRY.

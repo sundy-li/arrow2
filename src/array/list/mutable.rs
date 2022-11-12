@@ -1,16 +1,21 @@
 use std::sync::Arc;
 
 use crate::{
-    array::{Array, MutableArray, Offset, TryExtend, TryPush},
+    array::{
+        physical_binary::{extend_validity, try_extend_offsets},
+        specification::try_check_offsets,
+        Array, MutableArray, Offset, TryExtend, TryExtendFromSelf, TryPush,
+    },
     bitmap::MutableBitmap,
     datatypes::{DataType, Field},
     error::{Error, Result},
+    trusted_len::TrustedLen,
 };
 
 use super::ListArray;
 
 /// The mutable version of [`ListArray`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MutableListArray<O: Offset, M: MutableArray> {
     data_type: DataType,
     offsets: Vec<O>,
@@ -70,6 +75,8 @@ where
     I: IntoIterator<Item = Option<T>>,
 {
     fn try_extend<II: IntoIterator<Item = Option<I>>>(&mut self, iter: II) -> Result<()> {
+        let iter = iter.into_iter();
+        self.reserve(iter.size_hint().0);
         for items in iter {
             self.try_push(items)?;
         }
@@ -93,6 +100,20 @@ where
             self.push_null();
         }
         Ok(())
+    }
+}
+
+impl<O, M> TryExtendFromSelf for MutableListArray<O, M>
+where
+    O: Offset,
+    M: MutableArray + TryExtendFromSelf,
+{
+    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+        extend_validity(self.len(), &mut self.validity, &other.validity);
+
+        self.values.try_extend_from_self(&other.values)?;
+
+        try_extend_offsets(&mut self.offsets, &other.offsets)
     }
 }
 
@@ -150,6 +171,81 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
         }
+    }
+
+    /// Expand this array, using elements from the underlying backing array.
+    /// Assumes the expansion begins at the highest previous offset, or zero if
+    /// this [MutableListArray] is currently empty.
+    ///
+    /// Panics if:
+    /// - the new offsets are not in monotonic increasing order.
+    /// - any new offset is not in bounds of the backing array.
+    /// - the passed iterator has no upper bound.
+    pub(crate) fn extend_offsets<II>(&mut self, expansion: II)
+    where
+        II: TrustedLen<Item = Option<O>>,
+    {
+        let current_len = self.offsets.len();
+        let (_, upper) = expansion.size_hint();
+        let upper = upper.expect("iterator must have upper bound");
+        if current_len == 0 && upper > 0 {
+            self.offsets.push(O::zero());
+        }
+        // safety: checked below
+        unsafe { self.unsafe_extend_offsets(expansion) };
+        if self.offsets.len() > current_len {
+            // check all inserted offsets
+            try_check_offsets(&self.offsets[current_len..], self.values.len())
+                .expect("invalid offsets");
+        }
+        // else expansion is empty, and this is trivially safe.
+    }
+
+    /// Expand this array, using elements from the underlying backing array.
+    /// Assumes the expansion begins at the highest previous offset, or zero if
+    /// this [MutableListArray] is currently empty.
+    ///
+    /// # Safety
+    ///
+    /// Assumes that `offsets` are in order, and do not overrun the underlying
+    /// `values` backing array.
+    ///
+    /// Also assumes the expansion begins at the highest previous offset, or
+    /// zero if the array is currently empty.
+    ///
+    /// Panics if the passed iterator has no upper bound.
+    pub(crate) unsafe fn unsafe_extend_offsets<II>(&mut self, expansion: II)
+    where
+        II: TrustedLen<Item = Option<O>>,
+    {
+        let (_, upper) = expansion.size_hint();
+        let upper = upper.expect("iterator must have upper bound");
+        let final_size = self.len() + upper;
+        self.offsets.reserve(upper);
+
+        for item in expansion {
+            match item {
+                Some(offset) => {
+                    self.offsets.push(offset);
+                    if let Some(validity) = &mut self.validity {
+                        validity.push(true);
+                    }
+                }
+                None => self.push_null(),
+            }
+
+            if let Some(validity) = &mut self.validity {
+                if validity.capacity() < final_size {
+                    validity.reserve(final_size - validity.capacity());
+                }
+            }
+        }
+    }
+
+    /// Returns the length of this array
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.offsets.len() - 1
     }
 
     /// The values
@@ -213,7 +309,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
 
 impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, M> {
     fn len(&self) -> usize {
-        self.offsets.len() - 1
+        MutableListArray::len(self)
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {

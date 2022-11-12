@@ -6,6 +6,8 @@ use arrow2::{
 };
 
 mod mutable;
+mod mutable_values;
+mod to_mutable;
 
 #[test]
 fn basics() {
@@ -21,7 +23,7 @@ fn basics() {
     assert_eq!(array.offsets().as_slice(), &[0, 5, 5, 11]);
     assert_eq!(
         array.validity(),
-        Some(&Bitmap::from_u8_slice(&[0b00000101], 3))
+        Some(&Bitmap::from_u8_slice([0b00000101], 3))
     );
     assert!(array.is_valid(0));
     assert!(!array.is_valid(1));
@@ -53,7 +55,7 @@ fn empty() {
 
 #[test]
 fn from() {
-    let array = BinaryArray::<i32>::from(&[Some(b"hello".as_ref()), Some(b" ".as_ref()), None]);
+    let array = BinaryArray::<i32>::from([Some(b"hello".as_ref()), Some(b" ".as_ref()), None]);
 
     let a = array.validity().unwrap();
     assert_eq!(a, &Bitmap::from([true, true, false]));
@@ -85,7 +87,7 @@ fn from_iter() {
 
 #[test]
 fn with_validity() {
-    let array = BinaryArray::<i32>::from(&[Some(b"hello".as_ref()), Some(b" ".as_ref()), None]);
+    let array = BinaryArray::<i32>::from([Some(b"hello".as_ref()), Some(b" ".as_ref()), None]);
 
     let array = array.with_validity(None);
 
@@ -148,7 +150,65 @@ fn value_unchecked_with_wrong_offsets_panics() {
 
 #[test]
 fn debug() {
-    let array = BinaryArray::<i32>::from(&[Some([1, 2].as_ref()), Some(&[]), None]);
+    let array = BinaryArray::<i32>::from([Some([1, 2].as_ref()), Some(&[]), None]);
 
     assert_eq!(format!("{:?}", array), "BinaryArray[[1, 2], [], None]");
+}
+
+#[test]
+fn into_mut_1() {
+    let offsets = Buffer::from(vec![0, 1]);
+    let values = Buffer::from(b"a".to_vec());
+    let a = values.clone(); // cloned values
+    assert_eq!(a, values);
+    let array = BinaryArray::<i32>::from_data(DataType::Binary, offsets, values, None);
+    assert!(array.into_mut().is_left());
+}
+
+#[test]
+fn into_mut_2() {
+    let offsets = Buffer::from(vec![0, 1]);
+    let values = Buffer::from(b"a".to_vec());
+    let a = offsets.clone(); // cloned offsets
+    assert_eq!(a, offsets);
+    let array = BinaryArray::<i32>::from_data(DataType::Binary, offsets, values, None);
+    assert!(array.into_mut().is_left());
+}
+
+#[test]
+fn into_mut_3() {
+    let offsets = Buffer::from(vec![0, 1]);
+    let values = Buffer::from(b"a".to_vec());
+    let validity = Some([true].into());
+    let a = validity.clone(); // cloned validity
+    assert_eq!(a, validity);
+    let array = BinaryArray::<i32>::new(DataType::Binary, offsets, values, validity);
+    assert!(array.into_mut().is_left());
+}
+
+#[test]
+fn into_mut_4() {
+    let offsets = Buffer::from(vec![0, 1]);
+    let values = Buffer::from(b"a".to_vec());
+    let validity = Some([true].into());
+    let array = BinaryArray::<i32>::new(DataType::Binary, offsets, values, validity);
+    assert!(array.into_mut().is_right());
+}
+
+#[test]
+fn rev_iter() {
+    let array = BinaryArray::<i32>::from([Some("hello".as_bytes()), Some(" ".as_bytes()), None]);
+
+    assert_eq!(
+        array.into_iter().rev().collect::<Vec<_>>(),
+        vec![None, Some(" ".as_bytes()), Some("hello".as_bytes())]
+    );
+}
+
+#[test]
+fn iter_nth() {
+    let array = BinaryArray::<i32>::from([Some("hello"), Some(" "), None]);
+
+    assert_eq!(array.iter().nth(1), Some(Some(" ".as_bytes())));
+    assert_eq!(array.iter().nth(10), None);
 }

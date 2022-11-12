@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    array::{Array, MutableArray},
+    array::{physical_binary::extend_validity, Array, MutableArray, TryExtendFromSelf},
     bitmap::MutableBitmap,
     datatypes::DataType,
     error::{Error, Result},
@@ -13,7 +13,7 @@ use super::{FixedSizeBinaryArray, FixedSizeBinaryValues};
 /// Converting a [`MutableFixedSizeBinaryArray`] into a [`FixedSizeBinaryArray`] is `O(1)`.
 /// # Implementation
 /// This struct does not allocate a validity until one is required (i.e. push a null to it).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MutableFixedSizeBinaryArray {
     data_type: DataType,
     size: usize,
@@ -73,6 +73,23 @@ impl MutableFixedSizeBinaryArray {
         )
     }
 
+    /// Creates a new [`MutableFixedSizeBinaryArray`] from a slice of optional `[u8]`.
+    // Note: this can't be `impl From` because Rust does not allow double `AsRef` on it.
+    pub fn from<const N: usize, P: AsRef<[Option<[u8; N]>]>>(slice: P) -> Self {
+        let values = slice
+            .as_ref()
+            .iter()
+            .copied()
+            .flat_map(|x| x.unwrap_or([0; N]))
+            .collect::<Vec<_>>();
+        let validity = slice
+            .as_ref()
+            .iter()
+            .map(|x| x.is_some())
+            .collect::<MutableBitmap>();
+        Self::from_data(DataType::FixedSizeBinary(N), values, validity.into())
+    }
+
     /// tries to push a new entry to [`MutableFixedSizeBinaryArray`].
     /// # Error
     /// Errors iff the size of `value` is not equal to its own size.
@@ -110,6 +127,12 @@ impl MutableFixedSizeBinaryArray {
     #[inline]
     pub fn push<P: AsRef<[u8]>>(&mut self, value: Option<P>) {
         self.try_push(value).unwrap()
+    }
+
+    /// Returns the length of this array
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.values.len() / self.size as usize
     }
 
     /// Pop the last entry from [`MutableFixedSizeBinaryArray`].
@@ -270,5 +293,15 @@ impl FixedSizeBinaryValues for MutableFixedSizeBinaryArray {
 impl PartialEq for MutableFixedSizeBinaryArray {
     fn eq(&self, other: &Self) -> bool {
         self.iter().eq(other.iter())
+    }
+}
+
+impl TryExtendFromSelf for MutableFixedSizeBinaryArray {
+    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+        extend_validity(self.len(), &mut self.validity, &other.validity);
+
+        let slice = other.values.as_slice();
+        self.values.extend_from_slice(slice);
+        Ok(())
     }
 }

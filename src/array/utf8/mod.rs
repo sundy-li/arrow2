@@ -1,6 +1,6 @@
 use crate::{
     bitmap::{
-        utils::{zip_validity, ZipValidity},
+        utils::{BitmapIter, ZipValidity},
         Bitmap,
     },
     buffer::Buffer,
@@ -21,8 +21,19 @@ pub(super) mod fmt;
 mod from;
 mod iterator;
 mod mutable;
+mod mutable_values;
 pub use iterator::*;
 pub use mutable::*;
+pub use mutable_values::MutableUtf8ValuesArray;
+
+// Auxiliary struct to allow presenting &str as [u8] to a generic function
+pub(super) struct StrAsBytes<P>(P);
+impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref().as_bytes()
+    }
+}
 
 /// A [`Utf8Array`] is arrow's semantic equivalent of an immutable `Vec<Option<String>>`.
 /// Cloning and slicing this struct is `O(1)`.
@@ -117,12 +128,12 @@ impl<O: Offset> Utf8Array<O> {
     /// A convenience method that uses [`Self::from_trusted_len_iter`].
     // Note: this can't be `impl From` because Rust does not allow double `AsRef` on it.
     pub fn from<T: AsRef<str>, P: AsRef<[Option<T>]>>(slice: P) -> Self {
-        Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
+        MutableUtf8Array::<O>::from(slice).into()
     }
 
     /// Returns an iterator of `Option<&str>`
-    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<O>> {
-        zip_validity(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
+    pub fn iter(&self) -> ZipValidity<&str, Utf8ValuesIter<O>, BitmapIter> {
+        ZipValidity::new(self.values_iter(), self.validity.as_ref().map(|x| x.iter()))
     }
 
     /// Returns an iterator of `&str`
@@ -209,7 +220,8 @@ impl<O: Offset> Utf8Array<O> {
         let validity = self
             .validity
             .clone()
-            .map(|x| x.slice_unchecked(offset, length));
+            .map(|bitmap| bitmap.slice_unchecked(offset, length))
+            .and_then(|bitmap| (bitmap.unset_bits() > 0).then(|| bitmap));
         // + 1: `length == 0` implies that we take the first offset.
         let offsets = self.offsets.clone().slice_unchecked(offset, length + 1);
         Self {

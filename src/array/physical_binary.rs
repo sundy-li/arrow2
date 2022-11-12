@@ -1,5 +1,6 @@
 use crate::array::Offset;
 use crate::bitmap::MutableBitmap;
+use crate::error::Error;
 
 /// # Safety
 /// The caller must ensure that `iterator` is `TrustedLen`.
@@ -159,7 +160,6 @@ pub(crate) unsafe fn extend_from_trusted_len_values_iter<I, P, O>(
 
 // Populates `offsets` and `values` [`Vec`]s with information extracted
 // from the incoming `iterator`.
-
 // the return value indicates how many items were added.
 #[inline]
 pub(crate) fn extend_from_values_iter<I, P, O>(
@@ -280,4 +280,40 @@ where
         offsets.push(length)
     }
     (offsets, values)
+}
+
+/// Extends `offsets` with all offsets from `other`
+#[inline]
+pub(crate) fn try_extend_offsets<O>(offsets: &mut Vec<O>, other: &[O]) -> Result<(), Error>
+where
+    O: Offset,
+{
+    let lengths = other.windows(2).map(|w| w[1] - w[0]);
+    let mut last = *offsets.last().unwrap();
+
+    offsets.reserve(other.len() - 1);
+    for length in lengths {
+        let r = last.checked_add(&length).ok_or(Error::Overflow)?;
+        last += length;
+        offsets.push(r)
+    }
+    Ok(())
+}
+
+/// Extends `validity` with all items from `other`
+pub(crate) fn extend_validity(
+    length: usize,
+    validity: &mut Option<MutableBitmap>,
+    other: &Option<MutableBitmap>,
+) {
+    if let Some(other) = other {
+        if let Some(validity) = validity {
+            let slice = other.as_slice();
+            validity.extend_from_slice(slice, 0, other.len())
+        } else {
+            let mut new_validity = MutableBitmap::from_len_set(length);
+            new_validity.extend_from_slice(other.as_slice(), 0, other.len());
+            *validity = Some(new_validity);
+        }
+    }
 }

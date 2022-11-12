@@ -1,6 +1,6 @@
 [package]
 name = "arrow2"
-version = "0.14.0"
+version = "0.14.2"
 license = "Apache-2.0"
 description = "Unofficial implementation of Apache Arrow spec in safe Rust"
 homepage = "https://github.com/jorgecarleitao/arrow2"
@@ -32,6 +32,8 @@ hash_hasher = "^2.0.3"
 simdutf8 = "0.1.3"
 # faster hashing
 ahash = { version = "0.7" }
+# A Rust port of SwissTable 
+hashbrown = { version = "0.12", default-features = false, optional = true }
 
 # for timezone support
 chrono-tz = { version = "0.6", optional = true }
@@ -50,7 +52,7 @@ regex-syntax = { version = "^0.6", optional = true }
 streaming-iterator = { version = "0.1", optional = true }
 fallible-streaming-iterator = { version = "0.1", optional = true }
 
-json-deserializer = { version = "0.4", optional = true, features = ["preserve_order"] }
+json-deserializer = { version = "0.4.2", optional = true, features = ["preserve_order"] }
 indexmap = { version = "^1.6", optional = true }
 
 # used to print columns in a nice columnar format
@@ -207,7 +209,7 @@ compute_merge_sort = ["itertools", "compute_sort"]
 compute_nullif = ["compute_comparison"]
 compute_partition = ["compute_sort"]
 compute_regex_match = ["regex"]
-compute_sort = ["compute_take"]
+compute_sort = ["compute_take", "hashbrown"]
 compute_substring = []
 compute_take = []
 compute_temporal = []
@@ -243,6 +245,9 @@ compute = [
 benchmarks = ["rand"]
 serde_types = ["serde", "serde_derive"]
 simd = []
+
+[build-dependencies]
+rustc_version = "0.4.0"
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]

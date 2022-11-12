@@ -18,7 +18,7 @@ fn basics() {
     assert_eq!(array.values().as_slice(), &[1, 0, 10]);
     assert_eq!(
         array.validity(),
-        Some(&Bitmap::from_u8_slice(&[0b00000101], 3))
+        Some(&Bitmap::from_u8_slice([0b00000101], 3))
     );
     assert!(array.is_valid(0));
     assert!(!array.is_valid(1));
@@ -79,7 +79,7 @@ fn months_days_ns_from_slice() {
         months_days_ns::new(2, 3, 3),
     ];
 
-    let array = MonthsDaysNsArray::from_slice(&data);
+    let array = MonthsDaysNsArray::from_slice(data);
 
     let a = array.values().as_slice();
     assert_eq!(a, data.as_ref());
@@ -123,4 +123,16 @@ fn into_mut_3() {
     let validity = Some([true, false].into());
     let array = PrimitiveArray::new(DataType::Int32, values, validity);
     assert!(array.into_mut().is_right());
+}
+
+#[test]
+fn into_iter() {
+    let data = vec![Some(1), None, Some(10)];
+    let rev = data.clone().into_iter().rev();
+
+    let array: Int32Array = data.clone().into_iter().collect();
+
+    assert_eq!(array.clone().into_iter().collect::<Vec<_>>(), data);
+
+    assert!(array.into_iter().rev().eq(rev))
 }

@@ -18,10 +18,10 @@ fn basics() {
     assert!(!array.value(1));
     assert!(!array.value(2));
     assert!(!unsafe { array.value_unchecked(2) });
-    assert_eq!(array.values(), &Bitmap::from_u8_slice(&[0b00000001], 3));
+    assert_eq!(array.values(), &Bitmap::from_u8_slice([0b00000001], 3));
     assert_eq!(
         array.validity(),
-        Some(&Bitmap::from_u8_slice(&[0b00000101], 3))
+        Some(&Bitmap::from_u8_slice([0b00000101], 3))
     );
     assert!(array.is_valid(0));
     assert!(!array.is_valid(1));
@@ -130,4 +130,16 @@ fn from_iter() {
     let iter = std::iter::repeat(true).take(2).map(Some);
     let a: BooleanArray = iter.collect();
     assert_eq!(a.len(), 2);
+}
+
+#[test]
+fn into_iter() {
+    let data = vec![Some(true), None, Some(false)];
+    let rev = data.clone().into_iter().rev();
+
+    let array: BooleanArray = data.clone().into_iter().collect();
+
+    assert_eq!(array.clone().into_iter().collect::<Vec<_>>(), data);
+
+    assert!(array.into_iter().rev().eq(rev))
 }

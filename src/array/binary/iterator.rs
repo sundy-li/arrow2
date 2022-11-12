@@ -1,49 +1,44 @@
-use crate::{array::Offset, bitmap::utils::ZipValidity, trusted_len::TrustedLen};
+use crate::{
+    array::{ArrayAccessor, ArrayValuesIter, Offset},
+    bitmap::utils::{BitmapIter, ZipValidity},
+};
 
-use super::BinaryArray;
+use super::{BinaryArray, MutableBinaryValuesArray};
 
-/// Iterator over slices of `&[u8]`.
-#[derive(Debug, Clone)]
-pub struct BinaryValueIter<'a, O: Offset> {
-    array: &'a BinaryArray<O>,
-    index: usize,
-}
-
-impl<'a, O: Offset> BinaryValueIter<'a, O> {
-    /// Creates a new [`BinaryValueIter`]
-    pub fn new(array: &'a BinaryArray<O>) -> Self {
-        Self { array, index: 0 }
-    }
-}
-
-impl<'a, O: Offset> Iterator for BinaryValueIter<'a, O> {
+unsafe impl<'a, O: Offset> ArrayAccessor<'a> for BinaryArray<O> {
     type Item = &'a [u8];
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.array.len() {
-            return None;
-        } else {
-            self.index += 1;
-        }
-        Some(unsafe { self.array.value_unchecked(self.index - 1) })
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        self.value_unchecked(index)
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            self.array.len() - self.index,
-            Some(self.array.len() - self.index),
-        )
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
+/// Iterator of values of an [`BinaryArray`].
+pub type BinaryValueIter<'a, O> = ArrayValuesIter<'a, BinaryArray<O>>;
+
 impl<'a, O: Offset> IntoIterator for &'a BinaryArray<O> {
     type Item = Option<&'a [u8]>;
-    type IntoIter = ZipValidity<'a, &'a [u8], BinaryValueIter<'a, O>>;
+    type IntoIter = ZipValidity<&'a [u8], BinaryValueIter<'a, O>, BitmapIter<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-unsafe impl<O: Offset> TrustedLen for BinaryValueIter<'_, O> {}
+/// Iterator of values of an [`MutableBinaryValuesArray`].
+pub type MutableBinaryValuesIter<'a, O> = ArrayValuesIter<'a, MutableBinaryValuesArray<O>>;
+
+impl<'a, O: Offset> IntoIterator for &'a MutableBinaryValuesArray<O> {
+    type Item = &'a [u8];
+    type IntoIter = MutableBinaryValuesIter<'a, O>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
