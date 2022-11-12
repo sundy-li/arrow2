@@ -164,7 +164,7 @@ pub fn array_to_pages(
                 })
             }
             _ => {
-                const PAGE_ROW_COUNT: usize = 8192;
+                const PAGE_ROW_COUNT: usize = 1024;
                 if array.len() <= PAGE_ROW_COUNT {
                     array_to_page(array, type_, nested, options, encoding).map(|page| DynIter::new(std::iter::once(Ok(page))))
                 } else {
