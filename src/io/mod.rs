@@ -51,6 +51,10 @@ pub mod parquet;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_avro")))]
 pub mod avro;
 
+#[cfg(feature = "io_fuse")]
+#[cfg_attr(docsrs, doc(cfg(feature = "io_fuse")))]
+pub mod fuse;
+
 #[cfg(feature = "io_print")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_print")))]
 pub mod print;

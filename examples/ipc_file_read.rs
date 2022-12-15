@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::time::Instant;
 
 use arrow2::array::Array;
 use arrow2::chunk::Chunk;
@@ -59,12 +60,16 @@ fn main() -> Result<()> {
 
     let file_path = &args[1];
 
+    let t = Instant::now();
     let (schema, chunks) = read_chunks(file_path)?;
     let names = schema.fields.iter().map(|f| &f.name).collect::<Vec<_>>();
-    println!("{}", print::write(&chunks, &names));
+    // println!("{}", print::write(&chunks, &names));
 
-    let (schema, chunk) = read_batch(file_path)?;
-    let names = schema.fields.iter().map(|f| &f.name).collect::<Vec<_>>();
-    println!("{}", print::write(&[chunk], &names));
+    println!("{:?}, rows: {}", chunks.len(), chunks[0].len());
+    println!("cost {:?} ms", t.elapsed().as_millis());
+
+    // let (schema, chunk) = read_batch(file_path)?;
+    // let names = schema.fields.iter().map(|f| &f.name).collect::<Vec<_>>();
+    // println!("{}", print::write(&[chunk], &names));
     Ok(())
 }

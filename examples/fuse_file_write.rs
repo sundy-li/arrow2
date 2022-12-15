@@ -4,7 +4,8 @@ use arrow2::array::{Array, Int32Array, Utf8Array};
 use arrow2::chunk::Chunk;
 use arrow2::datatypes::{DataType, Field, Schema};
 use arrow2::error::Result;
-use arrow2::io::ipc::write;
+use arrow2::io::fuse::write;
+use std::io::Write;
 
 fn write_batches(path: &str, schema: Schema, chunks: &[Chunk<Box<dyn Array>>]) -> Result<()> {
     let file = File::create(path)?;
@@ -12,15 +13,23 @@ fn write_batches(path: &str, schema: Schema, chunks: &[Chunk<Box<dyn Array>>]) -
     let options = write::WriteOptions {
         compression: Some(write::Compression::LZ4),
     };
-    let mut writer = write::FileWriter::new(file, schema, None, options);
+    let mut writer = write::FuseWriter::new(file, schema, options);
 
     writer.start()?;
     for chunk in chunks {
-        writer.write(chunk, None)?
+        writer.write(chunk)?
     }
-    writer.finish()
+    
+    writer.finish();
+    
+    let metas = serde_json::to_vec(&writer.metas).unwrap();
+    let mut meta_file = File::options().create(true).write(true).open("/tmp/fuse.meta")?;
+    meta_file.write_all(&metas)?;
+    meta_file.flush();
+    Ok(())
 }
 
+// cargo run --package arrow2 --example fuse_file_write --features io_json_integration,io_fuse,io_parquet,io_parquet_compression,io_ipc_compression /tmp/input.fuse 
 fn main() -> Result<()> {
     use std::env;
     let args: Vec<String> = env::args().collect();
@@ -29,6 +38,7 @@ fn main() -> Result<()> {
     let (chunk, schema) = read_chunk();
     // write it
     write_batches(file_path, schema, &[chunk])?;
+    
     Ok(())
 }
 

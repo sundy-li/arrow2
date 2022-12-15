@@ -104,27 +104,22 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
     let mut buffer = vec![T::default(); length];
-
-    // decompress first
-    scratch.clear();
-    scratch.try_reserve(buffer_length)?;
-    reader
-        .by_ref()
-        .take(buffer_length as u64)
-        .read_to_end(scratch)?;
-
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
 
     let compression = compression
         .codec()
         .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
 
+    let _ = reader.seek(SeekFrom::Current(8));
+    let r = reader.by_ref().take(buffer_length as u64);
     match compression {
         arrow_format::ipc::CompressionType::Lz4Frame => {
-            compression::decompress_lz4(&scratch[8..], out_slice)?;
+            let mut decoder = lz4::Decoder::new(r)?;
+            decoder.read_exact(out_slice).unwrap();
         }
         arrow_format::ipc::CompressionType::Zstd => {
-            compression::decompress_zstd(&scratch[8..], out_slice)?;
+            let mut decoder = zstd::Decoder::new(r)?;
+            decoder.read_exact(out_slice).unwrap();
         }
     }
     Ok(buffer)

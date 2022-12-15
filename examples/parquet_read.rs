@@ -3,7 +3,9 @@ use std::time::SystemTime;
 
 use arrow2::error::Error;
 use arrow2::io::parquet::read;
+use arrow2::io::print;
 
+// cargo run --package arrow2 --example parquet_read --features io_json_integration,io_fuse,io_parquet,io_parquet_compression,io_ipc_compression,io_print --release /tmp/input.parquet
 fn main() -> Result<(), Error> {
     // say we have a file
     use std::env;
@@ -36,13 +38,19 @@ fn main() -> Result<(), Error> {
         .collect();
 
     // we can then read the row groups into chunks
-    let chunks = read::FileReader::new(reader, row_groups, schema, Some(1024 * 8 * 8), None, None);
+    let chunks = read::FileReader::new(reader, row_groups, schema, Some(usize::MAX), None, None);
 
     let start = SystemTime::now();
     for maybe_chunk in chunks {
         let chunk = maybe_chunk?;
         assert!(!chunk.is_empty());
+        
+        println!("chunk len -> {:?}", chunk.len());
+        // println!("{}", print::write(&[chunk], &["names"]));
+        
     }
     println!("took: {} ms", start.elapsed().unwrap().as_millis());
+    
+    
     Ok(())
 }
