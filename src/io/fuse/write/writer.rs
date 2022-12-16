@@ -26,7 +26,8 @@ pub struct FuseWriter<W: Write> {
     pub(crate) schema: Schema,
 
     /// Record blocks that will be written as part of the fuse footer
-    pub  metas: Vec<ColumnMeta>,
+    pub metas: Vec<ColumnMeta>,
+
     pub(crate) scratch: Vec<u8>,
     /// Whether the writer footer has been written, and the writer is finished
     pub(crate) state: State,
@@ -107,7 +108,7 @@ impl<W: Write> FuseWriter<W> {
         self.state = State::Finished;
         Ok(())
     }
-    
+
     pub fn total_size(&self) -> usize {
         self.writer.offset()
     }

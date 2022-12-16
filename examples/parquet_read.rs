@@ -44,13 +44,11 @@ fn main() -> Result<(), Error> {
     for maybe_chunk in chunks {
         let chunk = maybe_chunk?;
         assert!(!chunk.is_empty());
-        
+
         println!("chunk len -> {:?}", chunk.len());
         // println!("{}", print::write(&[chunk], &["names"]));
-        
     }
     println!("took: {} ms", start.elapsed().unwrap().as_millis());
-    
-    
+
     Ok(())
 }

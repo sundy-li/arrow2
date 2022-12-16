@@ -1,9 +1,10 @@
-use std::io::{Read};
-use std::{convert::TryInto};
+use std::convert::TryInto;
+use std::io::{BufReader, Read};
 
 use crate::buffer::Buffer;
 use crate::error::{Error, Result};
 use crate::io::fuse::read::Compression;
+use std::io::BufRead;
 
 use crate::{bitmap::Bitmap, types::NativeType};
 
@@ -11,7 +12,7 @@ use super::super::compression;
 use super::super::endianess::is_native_little_endian;
 
 fn read_swapped<T: NativeType, R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     length: usize,
     buffer: &mut Vec<T>,
     is_little_endian: bool,
@@ -45,7 +46,7 @@ fn read_swapped<T: NativeType, R: Read>(
 }
 
 fn read_uncompressed_buffer<T: NativeType, R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     length: usize,
     is_little_endian: bool,
 ) -> Result<Vec<T>> {
@@ -65,10 +66,11 @@ fn read_uncompressed_buffer<T: NativeType, R: Read>(
 }
 
 fn read_compressed_buffer<T: NativeType, R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     is_little_endian: bool,
     compression: Compression,
     length: usize,
+    scratch: &mut Vec<u8>,
 ) -> Result<Vec<T>> {
     if is_little_endian != is_native_little_endian() {
         return Err(Error::NotYetImplemented(
@@ -77,41 +79,56 @@ fn read_compressed_buffer<T: NativeType, R: Read>(
     }
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
-    let compressed_size = read_u32(reader)?;
-    let uncompressed_size = read_u32(reader)?;
+    let compressed_size = read_u32(reader)? as usize;
+    let uncompressed_size = read_u32(reader)? as usize;
 
     let mut buffer = vec![T::default(); length];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
-    
-    assert_eq!(uncompressed_size as usize, out_slice.len());
 
-    let r = reader.by_ref().take(compressed_size as u64);
+    assert_eq!(uncompressed_size, out_slice.len());
+
+    // already fit in buffer
+    let mut use_inner = false;
+    let input = if reader.buffer().len() > compressed_size {
+        use_inner = true;
+        reader.buffer()
+    } else {
+        scratch.resize(compressed_size, 0);
+        reader.read_exact(scratch.as_mut_slice())?;
+        scratch.as_slice()
+    };
+
     match compression {
         Compression::LZ4 => {
-            compression::decompress_lz4(r, out_slice)?;
+            compression::decompress_lz4(&input[..compressed_size], out_slice)?;
         }
         Compression::ZSTD => {
-            compression::decompress_zstd(r, out_slice)?;
+            compression::decompress_zstd(&input[..compressed_size], out_slice)?;
         }
+    }
+
+    if use_inner {
+        reader.consume(compressed_size);
     }
 
     Ok(buffer)
 }
 
 pub fn read_buffer<T: NativeType, R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     is_little_endian: bool,
     compression: Option<Compression>,
     length: usize,
+    scratch: &mut Vec<u8>,
 ) -> Result<Buffer<T>> {
     if let Some(compression) = compression {
-        Ok(read_compressed_buffer(reader, is_little_endian, compression, length)?.into())
+        Ok(read_compressed_buffer(reader, is_little_endian, compression, length, scratch)?.into())
     } else {
         Ok(read_uncompressed_buffer(reader, length, is_little_endian)?.into())
     }
 }
 
-fn read_uncompressed_bitmap<R: Read>(reader: &mut R, bytes: usize) -> Result<Vec<u8>> {
+fn read_uncompressed_bitmap<R: Read>(reader: &mut BufReader<R>, bytes: usize) -> Result<Vec<u8>> {
     let mut buffer = vec![];
     buffer.try_reserve(bytes)?;
     reader
@@ -123,39 +140,52 @@ fn read_uncompressed_bitmap<R: Read>(reader: &mut R, bytes: usize) -> Result<Vec
 }
 
 fn read_compressed_bitmap<R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     compression: Compression,
     bytes: usize,
+    scratch: &mut Vec<u8>,
 ) -> Result<Vec<u8>> {
     let mut buffer = vec![0u8; bytes];
 
-    let compressed_size = read_u32(reader)?;
-    let uncompressed_size = read_u32(reader)?;
+    let compressed_size = read_u32(reader)? as usize;
+    let uncompressed_size = read_u32(reader)? as usize;
+    assert_eq!(uncompressed_size, bytes);
 
-    let r = reader.by_ref().take(compressed_size as u64);
-    
-    assert_eq!(uncompressed_size as usize, bytes);
-    
+    // already fit in buffer
+    let mut use_inner = false;
+    let input = if reader.buffer().len() > compressed_size as usize {
+        use_inner = true;
+        reader.buffer()
+    } else {
+        scratch.resize(compressed_size, 0);
+        reader.read_exact(scratch.as_mut_slice())?;
+        scratch.as_slice()
+    };
+
     match compression {
         Compression::LZ4 => {
-            compression::decompress_lz4(r, &mut buffer)?;
+            compression::decompress_lz4(&input[..compressed_size], &mut buffer)?;
         }
         Compression::ZSTD => {
-            compression::decompress_zstd(r, &mut buffer)?;
+            compression::decompress_zstd(&input[..compressed_size], &mut buffer)?;
         }
     }
 
+    if use_inner {
+        reader.consume(compressed_size);
+    }
     Ok(buffer)
 }
 
 pub fn read_bitmap<R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     compression: Option<Compression>,
     length: usize,
+    scratch: &mut Vec<u8>,
 ) -> Result<Bitmap> {
     let bytes = (length + 7) / 8;
     let buffer = if let Some(compression) = compression {
-        read_compressed_bitmap(reader, compression, bytes)
+        read_compressed_bitmap(reader, compression, bytes, scratch)
     } else {
         read_uncompressed_bitmap(reader, bytes)
     }?;
@@ -165,26 +195,27 @@ pub fn read_bitmap<R: Read>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_validity<R: Read>(
-    reader: &mut R,
+    reader: &mut BufReader<R>,
     _is_little_endian: bool,
     compression: Option<Compression>,
     length: usize,
+    scratch: &mut Vec<u8>,
 ) -> Result<Option<Bitmap>> {
     let has_null = read_u8(reader)?;
     if has_null > 0 {
-        Ok(Some(read_bitmap(reader, compression, length)?))
+        Ok(Some(read_bitmap(reader, compression, length, scratch)?))
     } else {
         Ok(None)
     }
 }
 
-pub fn read_u8<R: Read>(r: &mut R) -> Result<u8> {
+pub fn read_u8<R: Read>(r: &mut BufReader<R>) -> Result<u8> {
     let mut buf = [0; 1];
     r.read_exact(&mut buf)?;
     Ok(buf[0])
 }
 
-pub fn read_u32<R: Read>(r: &mut R) -> Result<u32> {
+pub fn read_u32<R: Read>(r: &mut BufReader<R>) -> Result<u32> {
     let mut buf = [0; 4];
     r.read_exact(&mut buf)?;
     Ok(u32::from_le_bytes(buf))

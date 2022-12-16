@@ -6,9 +6,9 @@
 //! data in the order it was written in.
 
 mod array;
+pub mod deserialize;
 mod read_basic;
 pub mod reader;
-pub mod deserialize;
 // pub(crate) mod file;
 
 // mod read_basic;

@@ -38,7 +38,9 @@ pub mod write;
 const ARROW_MAGIC: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
 pub(crate) const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct ColumnMeta {
     pub offset: u64,
     pub length: u64,

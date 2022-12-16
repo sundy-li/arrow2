@@ -8,5 +8,3 @@ pub use serialize::write;
 pub use writer::FuseWriter;
 
 pub(crate) mod common_sync;
-
-
