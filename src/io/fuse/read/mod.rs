@@ -40,3 +40,10 @@ impl<T: AsRef<[u8]>> FuseReadBuf for std::io::Cursor<T> {
         &self.get_ref().as_ref()[(len as usize)..]
     }
 }
+
+
+impl<B: FuseReadBuf + ?Sized> FuseReadBuf for Box<B> {
+    fn buffer_bytes(&self) -> &[u8] {
+        (**self).buffer_bytes()
+    }
+}
