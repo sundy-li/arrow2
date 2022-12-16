@@ -4,12 +4,12 @@ use crate::array::{Offset, Utf8Array};
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
 use crate::error::Result;
-use crate::io::fuse::read::Compression;
+use crate::io::fuse::read::{Compression, FuseReadBuf};
 
 use super::super::read_basic::*;
 
-pub fn read_utf8<O: Offset, R: Read>(
-    reader: &mut BufReader<R>,
+pub fn read_utf8<O: Offset, R: FuseReadBuf>(
+    reader: &mut R,
     data_type: DataType,
     is_little_endian: bool,
     compression: Option<Compression>,

@@ -8,6 +8,7 @@
 mod array;
 pub mod deserialize;
 mod read_basic;
+use std::io::BufReader;
 pub mod reader;
 // pub(crate) mod file;
 
@@ -21,4 +22,21 @@ pub enum Compression {
     LZ4,
     /// ZSTD
     ZSTD,
+}
+
+pub trait FuseReadBuf: std::io::BufRead {
+    fn buffer_bytes(&self) -> &[u8];
+}
+
+impl<R: std::io::Read> FuseReadBuf for BufReader<R> {
+    fn buffer_bytes(&self) -> &[u8] {
+        self.buffer()
+    }
+}
+
+impl<T: AsRef<[u8]>> FuseReadBuf for std::io::Cursor<T> {
+    fn buffer_bytes(&self) -> &[u8] {
+        let len = self.position().min(self.get_ref().as_ref().len() as u64);
+        &self.get_ref().as_ref()[(len as usize)..]
+    }
 }

@@ -1,10 +1,11 @@
 use std::io::{BufReader, Read};
 
+use super::FuseReadBuf;
 use super::{deserialize, read_basic::read_u32, Compression};
 use crate::error::Result;
 use crate::{array::Array, datatypes::DataType};
 
-pub struct FuseReader<R: Read> {
+pub struct FuseReader<R: FuseReadBuf> {
     reader: BufReader<R>,
     data_type: DataType,
     is_little_endian: bool,
@@ -15,7 +16,7 @@ pub struct FuseReader<R: Read> {
     scratch: Vec<u8>,
 }
 
-impl<R: Read> FuseReader<R> {
+impl<R: FuseReadBuf> FuseReader<R> {
     pub fn new(
         reader: R,
         data_type: DataType,
@@ -30,7 +31,7 @@ impl<R: Read> FuseReader<R> {
             data_type,
             is_little_endian,
             compression,
-            current_values : 0,
+            current_values: 0,
             num_values,
             scratch,
         }

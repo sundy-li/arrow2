@@ -4,13 +4,13 @@ use crate::array::{BinaryArray, Offset};
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
 use crate::error::Result;
-use crate::io::fuse::read::Compression;
+use crate::io::fuse::read::{Compression, FuseReadBuf};
 
 use super::super::read_basic::*;
 
 #[allow(clippy::too_many_arguments)]
-pub fn read_binary<O: Offset, R: Read>(
-    reader: &mut BufReader<R>,
+pub fn read_binary<O: Offset, R: FuseReadBuf>(
+    reader: &mut R,
     data_type: DataType,
     is_little_endian: bool,
     compression: Option<Compression>,

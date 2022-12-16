@@ -5,10 +5,10 @@ use crate::datatypes::{DataType, PhysicalType};
 use crate::error::Result;
 use crate::io::fuse::read::Compression;
 
-use super::array::*;
+use super::{array::*, FuseReadBuf};
 
-pub fn read<R: Read>(
-    reader: &mut BufReader<R>,
+pub fn read<R: FuseReadBuf>(
+    reader: &mut R,
     data_type: DataType,
     is_little_endian: bool,
     compression: Option<Compression>,
