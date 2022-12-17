@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::{array::Array, datatypes::DataType};
 
 pub struct FuseReader<R: FuseReadBuf> {
-    reader: BufReader<R>,
+    reader: R,
     data_type: DataType,
     is_little_endian: bool,
     compression: Option<Compression>,
@@ -27,7 +27,7 @@ impl<R: FuseReadBuf> FuseReader<R> {
         scratch: Vec<u8>,
     ) -> Self {
         Self {
-            reader: BufReader::new(reader),
+            reader,
             data_type,
             is_little_endian,
             compression,
